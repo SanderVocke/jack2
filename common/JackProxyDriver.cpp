@@ -23,8 +23,26 @@
 #include "JackLockedEngine.h"
 #include "JackWaitCallbackDriver.h"
 #include "JackProxyDriver.h"
+#include <cstdlib>
+#include <vector>
+#include <string>
 
 using namespace std;
+
+vector<string> split_string (string s, string delimiter) {
+    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+    string token;
+    vector<string> res;
+
+    while ((pos_end = s.find (delimiter, pos_start)) != string::npos) {
+        token = s.substr (pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back (token);
+    }
+
+    res.push_back (s.substr (pos_start));
+    return res;
+}
 
 namespace Jack
 {
@@ -350,10 +368,25 @@ namespace Jack
         char proxy[REAL_JACK_PORT_NAME_SIZE];
         int i;
 
+        // Hack for SooperLooper proxy
+        const char* playback_channel_names_str = std::getenv("JACK_PROXY_PLAYBACK_CHANNEL_NAMES");
+        const char* capture_channel_names_str = std::getenv("JACK_PROXY_CAPTURE_CHANNEL_NAMES");
+        vector<string> capture_channel_names, playback_channel_names;
+        if(playback_channel_names_str) {
+            playback_channel_names = split_string(string(playback_channel_names_str), ",");
+        }
+        if(capture_channel_names_str) {
+            capture_channel_names = split_string(string(capture_channel_names_str), ",");
+        }
+
         fUpstreamPlaybackPorts = new jack_port_t* [fCaptureChannels];
         fUpstreamPlaybackPortConnected = new int [fCaptureChannels];
         for (i = 0; i < fCaptureChannels; i++) {
-            snprintf(proxy, sizeof(proxy), "%s:to_client_%d", fClientName, i + 1);
+            if(capture_channel_names.size() > i) {
+                snprintf(proxy, sizeof(proxy), "%s", capture_channel_names[i].c_str());
+            } else {
+                snprintf(proxy, sizeof(proxy), "%s:to_client_%d", fClientName, i + 1);
+            }
             fUpstreamPlaybackPorts[i] = jack_port_register(fClient, proxy, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput | JackPortIsTerminal, 0);
             if (fUpstreamPlaybackPorts[i] == NULL) {
                 jack_error("driver: cannot register upstream port %s", proxy);
@@ -365,7 +398,11 @@ namespace Jack
         fUpstreamCapturePorts = new jack_port_t* [fPlaybackChannels];
         fUpstreamCapturePortConnected = new int [fPlaybackChannels];
         for (i = 0; i < fPlaybackChannels; i++) {
-            snprintf(proxy, sizeof(proxy), "%s:from_client_%d", fClientName, i + 1);
+            if(playback_channel_names.size() > i) {
+                snprintf(proxy, sizeof(proxy), "%s", playback_channel_names[i].c_str());
+            } else {
+                snprintf(proxy, sizeof(proxy), "%s:from_client_%d", fClientName, i + 1);
+            }
             fUpstreamCapturePorts[i] = jack_port_register(fClient, proxy, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput | JackPortIsTerminal, 0);
             if (fUpstreamCapturePorts[i] == NULL) {
                 jack_error("driver: cannot register upstream port %s", proxy);

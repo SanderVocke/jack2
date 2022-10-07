@@ -28,8 +28,26 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #include "JackLockedEngine.h"
 #include "JackException.h"
 #include <assert.h>
+#include <cstdlib>
+#include <vector>
+#include <string>
 
 using namespace std;
+
+vector<string> split_string (string s, string delimiter) {
+    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+    string token;
+    vector<string> res;
+
+    while ((pos_end = s.find (delimiter, pos_start)) != string::npos) {
+        token = s.substr (pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back (token);
+    }
+
+    res.push_back (s.substr (pos_start));
+    return res;
+}
 
 namespace Jack
 {
@@ -119,11 +137,27 @@ int JackAudioDriver::Attach()
     char alias[REAL_JACK_PORT_NAME_SIZE+1];
     int i;
 
+    // Hack for SooperLooper proxy
+    const char* playback_channel_names_str = std::getenv("JACK_PROXY_PLAYBACK_CHANNEL_NAMES");
+    const char* capture_channel_names_str = std::getenv("JACK_PROXY_CAPTURE_CHANNEL_NAMES");
+    vector<string> capture_channel_names, playback_channel_names;
+    if(playback_channel_names_str) {
+        playback_channel_names = split_string(string(playback_channel_names_str), ",");
+    }
+    if(capture_channel_names_str) {
+        capture_channel_names = split_string(string(capture_channel_names_str), ",");
+    }
+
     jack_log("JackAudioDriver::Attach fBufferSize = %ld fSampleRate = %ld", fEngineControl->fBufferSize, fEngineControl->fSampleRate);
 
     for (i = 0; i < fCaptureChannels; i++) {
         snprintf(alias, sizeof(alias), "%s:%s:out%d", fAliasName, fCaptureDriverName, i + 1);
-        snprintf(name, sizeof(name), "%s:capture_%d", fClientControl.fName, i + 1);
+        if (i < capture_channel_names.size()) {
+            jack_info("JackAudioDriver: register capture %s", capture_channel_names[i].c_str());
+            snprintf(name, sizeof(name), "%s:%s", fClientControl.fName, capture_channel_names[i].c_str());
+        } else {
+            snprintf(name, sizeof(name), "%s:capture_%d", fClientControl.fName, i + 1);
+        }
         if (fEngine->PortRegister(fClientControl.fRefNum, name, JACK_DEFAULT_AUDIO_TYPE, CaptureDriverFlags, fEngineControl->fBufferSize, &port_index) < 0) {
             jack_error("driver: cannot register port for %s", name);
             return -1;
@@ -136,7 +170,12 @@ int JackAudioDriver::Attach()
 
     for (i = 0; i < fPlaybackChannels; i++) {
         snprintf(alias, sizeof(alias), "%s:%s:in%d", fAliasName, fPlaybackDriverName, i + 1);
-        snprintf(name, sizeof(name), "%s:playback_%d", fClientControl.fName, i + 1);
+        if (i < playback_channel_names.size()) {
+            jack_info("JackAudioDriver: register playback %s", playback_channel_names[i].c_str());
+            snprintf(name, sizeof(name), "%s:%s", fClientControl.fName, playback_channel_names[i].c_str());
+        } else {
+            snprintf(name, sizeof(name), "%s:playback_%d", fClientControl.fName, i + 1);
+        }
         if (fEngine->PortRegister(fClientControl.fRefNum, name, JACK_DEFAULT_AUDIO_TYPE, PlaybackDriverFlags, fEngineControl->fBufferSize, &port_index) < 0) {
             jack_error("driver: cannot register port for %s", name);
             return -1;
